@@ -19,6 +19,8 @@
 #
 #-------------------------------------------------------------------------
 EXE=act2lef.$(EXT)
+REFRESH_TEST=layout_refresh_test.$(EXT)
+CLEAN=$(REFRESH_TEST)
 
 TARGETINCS=geom.h tile.h attrib.h subcell.h
 TARGETINCSUBDIR=layout
@@ -28,6 +30,7 @@ TARGETSCRIPTS=mag.pl rect2lef.pl mag2rect.py gds2rect.py rect2gds.py gds2rect.sh
 TARGETLIBS=libact_layout.so pass_stk.so pass_layout.so
 
 OBJS_EXE=main.o
+REFRESH_TEST_OBJS=layout_refresh_test.o
 
 SHOBJS=geom.os tile.os subcell.os \
 	geom_layer.os \
@@ -38,7 +41,7 @@ SHOBJS_PASS=stk_pass.os
 SHOBJS_PASS2=stk_pass.os stk_layout.os 
 
 
-OBJS=$(OBJS_EXE) $(OBJS_EXE2) $(SHOBJS) $(SHOBJS_PASS) $(SHOBJS_PASS2)
+OBJS=$(OBJS_EXE) $(OBJS_EXE2) $(REFRESH_TEST_OBJS) $(SHOBJS) $(SHOBJS_PASS) $(SHOBJS_PASS2)
 
 SRCS=$(OBJS_EXE:.o=.cc) $(OBJS_EXE2:.os=.cc) $(SHOBJS:.os=.cc) $(SHOBJS_PASS:.os=.cc) $(SHOBJS_PASS2:.os=.cc)
 
@@ -48,6 +51,15 @@ include $(ACT_HOME)/scripts/Makefile.std
 
 $(EXE): $(OBJS_EXE)
 	$(CXX) $(SH_EXE_OPTIONS) $(CFLAGS) main.o -o $(EXE) $(SHLIBACTPASS)
+
+$(REFRESH_TEST): $(REFRESH_TEST_OBJS) pass_layout.so
+	$(CXX) $(SH_EXE_OPTIONS) $(CFLAGS) $(REFRESH_TEST_OBJS) pass_layout.so -o $(REFRESH_TEST) $(SHLIBACTPASS)
+
+layout_refresh_test.o: test/layout_refresh_test.cc stk_layout.h
+	$(CXX) $(CFLAGS) $(DFLAGS) -c test/layout_refresh_test.cc -o $@
+
+runtest: $(REFRESH_TEST)
+	(cd test; ACT_LAYOUT_REFRESH_TEST=$(CURDIR)/$(REFRESH_TEST) ./run.sh)
 
 libact_layout.so: $(SHOBJS) 
 	$(ACT_HOME)/scripts/linkso libact_layout.so $(SHOBJS) $(SHLIBACTPASS)

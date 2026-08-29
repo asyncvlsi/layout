@@ -45,6 +45,7 @@ public:
 
   void run_post (Process *top);
   void runrec (int mode, UserDef *u);
+  void resetForDesignRefresh ();
 
   void setBBox (Process *p, long llx, long lly, long urx, long ury);
   int getBBox (Process *p, long *llx, long *lly, long *urx, long *ury);
@@ -92,10 +93,11 @@ public:
   /* this is mode 5 */
   void emitDEFHeader (FILE *fp, Process *p);
   /* pad doubles as bb_x, ratio as bb_y if is_bounding_box is true*/
-  void emitDEF (FILE *fp, Process *p, double pad = 1.4, double ratio = 1.0, int do_pins = 1, bool is_bounding_box = false);
+  void emitDEF (FILE *fp, Process *p, double pad = 1.4, double ratio = 1.0, int do_pins = 1, bool is_bounding_box = false, double bb_llx = 0, double bb_lly = 0);
   
   /* welltap */
   LayoutBlob **wellplugs;
+  int _wellplug_count;
   netlist_t *dummy_netlist;	// dummy netlist
 
   LayoutBlob *_createwelltap (int flavor);
