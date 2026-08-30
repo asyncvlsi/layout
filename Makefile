@@ -49,7 +49,7 @@ LAY_SH_INCL=-L$(ACT_HOME)/lib -lact_layout
 
 include $(ACT_HOME)/scripts/Makefile.std
 
-$(EXE): $(OBJS_EXE)
+$(EXE): $(OBJS_EXE) $(REFRESH_TEST)
 	$(CXX) $(SH_EXE_OPTIONS) $(CFLAGS) main.o -o $(EXE) $(SHLIBACTPASS)
 
 $(REFRESH_TEST): $(REFRESH_TEST_OBJS) pass_layout.so
@@ -57,9 +57,6 @@ $(REFRESH_TEST): $(REFRESH_TEST_OBJS) pass_layout.so
 
 layout_refresh_test.o: test/layout_refresh_test.cc stk_layout.h
 	$(CXX) $(CFLAGS) $(DFLAGS) -c test/layout_refresh_test.cc -o $@
-
-runtest: $(REFRESH_TEST)
-	(cd test; ACT_LAYOUT_REFRESH_TEST=$(CURDIR)/$(REFRESH_TEST) ./run.sh)
 
 libact_layout.so: $(SHOBJS) 
 	$(ACT_HOME)/scripts/linkso libact_layout.so $(SHOBJS) $(SHLIBACTPASS)

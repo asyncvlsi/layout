@@ -940,7 +940,7 @@ static BBox print_dualstack (Layout *L, struct gate_pairs *gp, int diffspace)
 	n_left = gp->r.n;
 	p_left = gp->r.p;
       }
-
+      
       fposn = locate_fetedge (L, xpos, flags, n_prev, n_previdx, n_left,
 			      gp->u.e.n, gp->n_start + i);
       
@@ -2664,8 +2664,12 @@ void layout_recursive (ActPass *_ap, UserDef *u, int mode)
 
       phash_iter_init (tab, &it);
       _init_report ();
+
+      char *buf;
+      int bufln = 10240;
+      MALLOC (buf, char, bufln);
+      
       while ((b = phash_iter_next (tab, &it))) {
-	char buf[10240];
 	Process *p = (Process *) b->key;
 	unsigned long dx, dy;
 	double contrib;
@@ -2675,7 +2679,13 @@ void layout_recursive (ActPass *_ap, UserDef *u, int mode)
 	}
 	lp->_getAreaInfo (p, &dx, &dy);
 	contrib = (dx * dy) * scale * b->i;
-	snprintf (buf, 10240, "%s::%s count=%d, area=%.3g um^2 (%.2f%%)",
+
+	if (strlen (tmpns) + strlen (p->getName()) > bufln - 256) {
+	  bufln = strlen (tmpns) + strlen (p->getName()) + 1024;
+	  REALLOC (buf, char, bufln);
+	}
+	
+	snprintf (buf, bufln, "%s::%s count=%d, area=%.3g um^2 (%.2f%%)",
 		  tmpns, p->getName(), b->i,
 		  (dx * dy) * scale,
 		  contrib/local_area*100.0);
@@ -2691,55 +2701,75 @@ void layout_recursive (ActPass *_ap, UserDef *u, int mode)
       _init_report ();
       ActUniqProcInstiter inst(report->CurScope());
       for (inst = inst.begin(); inst != inst.end(); inst++) {
-	char buf[10240];
 	int pos = 0;
 	ValueIdx *vx = (*inst);
 	Process *proc;
-	proc = dynamic_cast<Process *> (vx->t->BaseType());
-	Assert (proc, "Hmm");
-	tmpns = proc->getns()->Name();
-	if (strcmp (tmpns, "::") != 0) {
-	  snprintf (buf+pos, 10240-pos, "%s", tmpns);
-	  pos += strlen (buf+pos);
-	}
-	FREE (tmpns);
-	snprintf (buf+pos, 10240-pos, "::");
-	pos += strlen (buf+pos);
-	vx->t->sPrint (buf+pos, 10240-pos);
-	pos += strlen (buf+pos);
-	snprintf (buf+pos, 10240-pos, " %s ", vx->getName());
-	pos += strlen (buf+pos);
-	
-	double my_area = 0;
-	phash_bucket_t *lb;
-	lb = phash_lookup (lp->getStats(), proc);
-	if (!lb) {
-	  long llx, lly, urx, ury;
-	  if (lp->getBBox (proc, &llx, &lly, &urx, &ury)) {
-	    snprintf (buf+pos, 10240-pos, "(leaf cell)");
+	Array *r = vx->t->arrayInfo();
+	InstType *xit;
+
+	do {
+	  if (r && r->getArrayType()) {
+	    xit = r->getArrayType();
 	  }
 	  else {
-	    snprintf (buf+pos, 10240-pos, "***err");
+	    xit = vx->t;
 	  }
+	  proc = dynamic_cast<Process *> (xit->BaseType());
+	  Assert (proc, "Hmm");
+	  tmpns = proc->getns()->Name();
+
+	  if (strlen (tmpns) + strlen (proc->getName()) > bufln - 256) {
+	    bufln = strlen (tmpns) + strlen (proc->getName()) + 1024;
+	    REALLOC (buf, char, bufln);
+	  }
+	
+	  if (strcmp (tmpns, "::") != 0) {
+	    snprintf (buf+pos, bufln-pos, "%s", tmpns);
+	    pos += strlen (buf+pos);
+	  }
+	  FREE (tmpns);
+	  snprintf (buf+pos, bufln-pos, "::");
 	  pos += strlen (buf+pos);
-	}
-	else {
-	  struct pHashtable *subtab = (struct pHashtable *) lb->v;
-	  phash_iter_t subit;
-	  phash_iter_init (subtab, &subit);
-	  while ((lb = phash_iter_next (subtab, &subit))) {
-	    Process *localp = (Process *) lb->key;
-	    unsigned long dx, dy;
-	    lp->_getAreaInfo (localp, &dx, &dy);
-	    my_area += (dx * dy) * scale * lb->i;
+	  xit->sPrint (buf+pos, bufln-pos);
+	  pos += strlen (buf+pos);
+	  snprintf (buf+pos, bufln-pos, " %s ", vx->getName());
+	  pos += strlen (buf+pos);
+	
+	  double my_area = 0;
+	  phash_bucket_t *lb;
+	  lb = phash_lookup (lp->getStats(), proc);
+	  if (!lb) {
+	    long llx, lly, urx, ury;
+	    if (lp->getBBox (proc, &llx, &lly, &urx, &ury)) {
+	      snprintf (buf+pos, bufln-pos, "(leaf cell)");
+	    }
+	    else {
+	      snprintf (buf+pos, bufln-pos, "***err");
+	    }
+	    pos += strlen (buf+pos);
 	  }
-	  snprintf (buf+pos, 10240-pos, "area=%.3g um^2 = %.3g mm^2 (%.2f%%)",
-		    my_area, my_area/1.0e6, my_area/local_area*100.0);
-	}
-	_add_report (buf, my_area);
+	  else {
+	    struct pHashtable *subtab = (struct pHashtable *) lb->v;
+	    phash_iter_t subit;
+	    phash_iter_init (subtab, &subit);
+	    while ((lb = phash_iter_next (subtab, &subit))) {
+	      Process *localp = (Process *) lb->key;
+	      unsigned long dx, dy;
+	      lp->_getAreaInfo (localp, &dx, &dy);
+	      my_area += (dx * dy) * scale * lb->i;
+	    }
+	    snprintf (buf+pos, bufln-pos, "area=%.3g um^2 = %.3g mm^2 (%.2f%%)",
+		      my_area, my_area/1.0e6, my_area/local_area*100.0);
+	  }
+	  _add_report (buf, my_area);
+	  if (r) {
+	    r = r->Next();
+	  }
+	} while (r);
 	//printf ("  %s\n", buf);
       }
       _print_report (stdout);
+      FREE (buf);
     }
   }
 }
@@ -3729,6 +3759,9 @@ void _collect_emit_nets (Act *a, ActId *prefix, Process *p, FILE *fp, int do_pin
       Arraystep *as = vx->t->arrayInfo()->stepper();
       while (!as->isend()) {
 	if (vx->isPrimary (as->index())) {
+	  if (as->curProc() && as->curProc() != instproc) {
+	    instproc = as->curProc();
+	  }
 	  Array *x = as->toArray();
 	  newid->setArray (x);
 	  _collect_emit_nets (a, cpy, instproc, fp, do_pins);
@@ -3830,9 +3863,9 @@ void ActStackLayout::emitDEF (FILE *fp, Process *p, double pad,
     ny = (sidey)/track_gap;
 
     fprintf (fp, "DIEAREA ( %d %d ) ( %d %d ) ;\n",
-      static_cast<int> (bb_llx), static_cast<int> (bb_lly),
-      static_cast<int> (bb_llx) + (nx)*pitchx,
-      static_cast<int> (bb_lly) + (ny)*track_gap);
+	     (int) bb_llx, (int) bb_lly,
+	     (int) (bb_llx + nx*pitchx),
+	     (int) (bb_lly + ny*track_gap));
   }
   // the original generate size on densety and ratio
   else {
@@ -4038,44 +4071,58 @@ void ActStackLayout::_collectLocalStats(Process *p)
     ActUniqProcInstiter it(p->CurScope());
     for (it = it.begin(); it != it.end(); it++) {
       ValueIdx *vx = *it;
-      Process *ip = dynamic_cast<Process *>(vx->t->BaseType());
-      Assert (ip, "What?");
-
+      Array *r = vx->t->arrayInfo();
+      InstType *xit;
       int sz;
-      if (vx->t->arrayInfo()) {
-	sz = vx->t->arrayInfo()->size();
-      }
-      else {
-	sz = 1;
-      }
-      
-      b = phash_lookup (_cellStats, ip);
 
-      if (b) {
-	/* subcells exist! */
-	struct pHashtable *subtable = (struct pHashtable *)b->v;
-	phash_iter_t it;
-	phash_iter_init (subtable, &it);
-	while ((b = phash_iter_next (subtable, &it))) {
+      do {
+	if (!r) {
+	  xit = vx->t;
+	  sz = 1;
+	}
+	else {
+	  if (r->getArrayType()) {
+	    xit = r->getArrayType();
+	  }
+	  else {
+	    xit = vx->t;
+	  }
+	  sz = r->getRangeSize();
+	}
+	Process *ip = dynamic_cast<Process *>(xit->BaseType());
+	Assert (ip, "What?");
+
+	b = phash_lookup (_cellStats, ip);
+
+	if (b) {
+	  /* subcells exist! */
+	  struct pHashtable *subtable = (struct pHashtable *)b->v;
+	  phash_iter_t it;
+	  phash_iter_init (subtable, &it);
+	  while ((b = phash_iter_next (subtable, &it))) {
+	    phash_bucket_t *nb;
+	    nb = phash_lookup (mytab, b->key);
+	    if (!nb) {
+	      nb = phash_add (mytab, b->key);
+	      nb->i = 0;
+	    }
+	    nb->i += b->i*sz;
+	  }
+	}
+	else {
+	  /* leaf cell */
 	  phash_bucket_t *nb;
-	  nb = phash_lookup (mytab, b->key);
+	  nb = phash_lookup (mytab, ip);
 	  if (!nb) {
-	    nb = phash_add (mytab, b->key);
+	    nb = phash_add (mytab, ip);
 	    nb->i = 0;
 	  }
-	  nb->i += b->i*sz;
+	  nb->i += sz;
 	}
-      }
-      else {
-	/* leaf cell */
-	phash_bucket_t *nb;
-	nb = phash_lookup (mytab, ip);
-	if (!nb) {
-	  nb = phash_add (mytab, ip);
-	  nb->i = 0;
+	if (r) {
+	  r = r->Next();
 	}
-	nb->i += sz;
-      }
+      } while (r);
     }
     return;
   }
