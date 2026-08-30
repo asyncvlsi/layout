@@ -9,3 +9,5 @@ actrectbbox.*
 pass_stk.so
 pass_layout.so
 libact_layout.so
+layout_refresh_test.arm64*
+layout_refresh_test.x86_64*

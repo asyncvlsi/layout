@@ -35,13 +35,15 @@
 void usage (char *name)
 {
   fprintf (stderr, "Unknown options.\n");
-  fprintf (stderr, "Usage: %s -p procname [-s] [-o <name>] [-a <mult>] [-c <cell>] <file.act>\n", name);
+  fprintf (stderr, "Usage: %s -p procname [-s] [-o <name>] [-a <mult>] [-B <w,h>] [-X <llx>] [-Y <lly>] [-c <cell>] <file.act>\n", name);
   fprintf (stderr, " -p procname: name of ACT process corresponding to the top-level of the design\n");
   fprintf (stderr, " -o <name>: output files will be <name>.<extension> (default: out)\n");
   fprintf (stderr, " -s : emit spice netlist\n");
   fprintf (stderr, " -P : include PINS section in DEF file\n");
   fprintf (stderr, " -a <mult>: use <mult> as the area multiplier for the DEF fie (default 1.4)\n");
   fprintf (stderr, " -r <ratio> : use this as the aspect ratio = x-size/y-size (default 1.0)\n");
+  fprintf (stderr, " -B <w,h>: emit a snapped bounding-box DIEAREA; width/height use layout units (bb_x/bb_y)\n");
+  fprintf (stderr, " -X <llx>, -Y <lly>: bounding-box lower-left in DEF database units (default 0,0)\n");
   fprintf (stderr, " -c <cell>: Read in the <cell> ACT file as a starting point for cells,\n\toverwriting it with an updated version with any new cells\n");
   fprintf (stderr, " -S : share staticizers\n");
   //fprintf (stderr, " -A : report area\n");
@@ -66,6 +68,13 @@ int main (int argc, char **argv)
   double aspect_ratio;
   int report = 0;
   int share_staticizers = 0;
+  int use_bounding_box = 0;
+  int bounding_box_dimensions_specified = 0;
+  int bounding_box_origin_specified = 0;
+  double bbox_width = 0;
+  double bbox_height = 0;
+  double bbox_llx = 0;
+  double bbox_lly = 0;
 
   area_multiplier = 1.4;
   aspect_ratio = 1.0;
@@ -85,7 +94,7 @@ int main (int argc, char **argv)
   }
 #endif
 
-  while ((ch = getopt (argc, argv, "c:p:o:sSPRa:r:")) != -1) {
+  while ((ch = getopt (argc, argv, "c:p:o:sSPRa:r:B:X:Y:")) != -1) {
     switch (ch) {
     case 'S':
       share_staticizers = 1;
@@ -101,6 +110,25 @@ int main (int argc, char **argv)
 
     case 'r':
       aspect_ratio = atof (optarg);
+      break;
+
+    case 'B':
+      if (sscanf (optarg, "%lf,%lf", &bbox_width, &bbox_height) != 2 ||
+          bbox_width <= 0 || bbox_height <= 0) {
+        fatal_error ("-B expects positive width,height in layout units");
+      }
+      use_bounding_box = 1;
+      bounding_box_dimensions_specified = 1;
+      break;
+
+    case 'X':
+      bbox_llx = atof (optarg);
+      bounding_box_origin_specified = 1;
+      break;
+
+    case 'Y':
+      bbox_lly = atof (optarg);
+      bounding_box_origin_specified = 1;
       break;
 
     case 'c':
@@ -143,6 +171,10 @@ int main (int argc, char **argv)
     }
   }
 
+  if (bounding_box_origin_specified && !bounding_box_dimensions_specified) {
+    fatal_error ("-X/-Y require -B <width,height>");
+  }
+
   if (optind != argc - 1) {
     fprintf (stderr, "Missing act file name.\n");
     usage (argv[0]);
@@ -174,9 +206,6 @@ int main (int argc, char **argv)
   if (!p) {
     fatal_error ("Could not find process `%s' in act file `%s'.\n",
 		 proc_name, argv[optind]);
-  }
-  if (!p->isExpanded()) {
-    p = p->Expand (ActNamespace::Global(), p->CurScope(), 0, NULL);
   }
 
   /*--- core passes ---*/
@@ -255,6 +284,13 @@ int main (int argc, char **argv)
   lp->setParam ("do_pins", do_pins);
   lp->setParam ("area_mult", area_multiplier);
   lp->setParam ("aspect_ratio", aspect_ratio);
+  lp->setParam ("is_bb", use_bounding_box);
+  if (use_bounding_box) {
+    lp->setParam ("bb_x", bbox_width);
+    lp->setParam ("bb_y", bbox_height);
+    lp->setParam ("bb_llx", bbox_llx);
+    lp->setParam ("bb_lly", bbox_lly);
+  }
 
   lp->run_recursive (p, 5);
 

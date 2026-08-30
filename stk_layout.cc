@@ -337,12 +337,88 @@ ActStackLayout::ActStackLayout (ActPass *ap)
   cacheConfig ();
 
   wellplugs = NULL;
+  _wellplug_count = 0;
   dummy_netlist = NULL;
+  _weak_supplies = NULL;
 
   _lef_header = 0;
   _cell_header = 0;
   _fp = NULL;
   _fpcell = NULL;
+}
+
+/**
+ * Drop caches and outputs derived from the current ACT design before pass
+ * refresh. Caller-owned layout configuration remains in the dynamic pass;
+ * only design-derived parameters and file handles are cleared here.
+ */
+void ActStackLayout::resetForDesignRefresh ()
+{
+  if (wellplugs) {
+    for (int i = 0; i < _wellplug_count; i++) {
+      delete wellplugs[i];
+    }
+    FREE (wellplugs);
+    wellplugs = NULL;
+  }
+  _wellplug_count = 0;
+
+  if (_weak_supplies) {
+    listitem_t *li = list_first (_weak_supplies);
+    while (li) {
+      delete (LayoutBlob *) list_value (li);
+      li = list_next (li);
+    }
+    list_free (_weak_supplies);
+    _weak_supplies = NULL;
+  }
+
+  if (_cellStats) {
+    phash_iter_t it;
+    phash_bucket_t *b;
+    phash_iter_init (_cellStats, &it);
+    while ((b = phash_iter_next (_cellStats, &it))) {
+      if (b->v) {
+	phash_free ((struct pHashtable *) b->v);
+      }
+    }
+    phash_free (_cellStats);
+    _cellStats = NULL;
+  }
+
+  if (boxH) {
+    phash_iter_t it;
+    phash_bucket_t *b;
+    phash_iter_init (boxH, &it);
+    while ((b = phash_iter_next (boxH, &it))) {
+      FREE (b->v);
+    }
+    phash_free (boxH);
+    boxH = NULL;
+  }
+
+  dummy_netlist = NULL;
+  _fp = NULL;
+  _fpcell = NULL;
+  _lef_header = 0;
+  _cell_header = 0;
+  _total_instances = -1;
+  _total_area = -1;
+  _total_stdcell_area = -1;
+  _maxht = -1;
+  _ymin = 0;
+  _ymax = 0;
+
+  ActDynamicPass *dp = dynamic_cast<ActDynamicPass *> (me);
+  if (dp) {
+    dp->clearParam ("area_collected");
+    dp->clearParam ("cell_maxheight");
+    dp->clearParam ("stdcell_area");
+    dp->clearParam ("total_area");
+    dp->clearParam ("lef_file");
+    dp->clearParam ("cell_file");
+    dp->clearParam ("def_file");
+  }
 }
 
 #define EDGE_FLAGS_LEFT 0x1
@@ -2005,6 +2081,7 @@ void ActStackLayout::run_post (Process *top)
 
   /* create welltap cells */
   int ntaps = config_get_table_size ("act.dev_flavors");
+  _wellplug_count = ntaps;
   MALLOC (wellplugs, LayoutBlob *, ntaps);
   for (int flavor=0; flavor < ntaps; flavor++) {
     wellplugs[flavor] = _createwelltap (flavor);
@@ -2435,6 +2512,8 @@ void ActStackLayout::runrec (int mode, UserDef *u)
     double aspect_ratio;
     double bb_x;
     double bb_y;
+    double bb_llx = 0;
+    double bb_lly = 0;
     int is_bb = 0;
     int do_pins;
     ActDynamicPass *dp = dynamic_cast<ActDynamicPass *>(me);
@@ -2453,7 +2532,13 @@ void ActStackLayout::runrec (int mode, UserDef *u)
     if (is_bb) {
       bb_x = dp->getRealParam ("bb_x");
       bb_y = dp->getRealParam ("bb_y");
-      emitDEF (fp, p, bb_x, bb_y, do_pins, true);
+      if (dp->hasParam ("bb_llx")) {
+        bb_llx = dp->getRealParam ("bb_llx");
+      }
+      if (dp->hasParam ("bb_lly")) {
+        bb_lly = dp->getRealParam ("bb_lly");
+      }
+      emitDEF (fp, p, bb_x, bb_y, do_pins, true, bb_llx, bb_lly);
     }
     else {
       area_mult = dp->getRealParam ("area_mult");
@@ -3711,7 +3796,8 @@ void ActStackLayout::emitDEFHeader (FILE *fp, Process *p)
 }
 
 void ActStackLayout::emitDEF (FILE *fp, Process *p, double pad,
-				  double ratio, int do_pins, bool is_bounding_box)
+				  double ratio, int do_pins, bool is_bounding_box,
+				  double bb_llx, double bb_lly)
 {
   ActDynamicPass *dp = dynamic_cast<ActDynamicPass *>(me);
   Assert (dp, "What?");
@@ -3777,8 +3863,9 @@ void ActStackLayout::emitDEF (FILE *fp, Process *p, double pad,
     ny = (sidey)/track_gap;
 
     fprintf (fp, "DIEAREA ( %d %d ) ( %d %d ) ;\n",
-      0, 0,
-      (nx)*pitchx, (ny)*track_gap);
+	     (int) bb_llx, (int) bb_lly,
+	     (int) (bb_llx + nx*pitchx),
+	     (int) (bb_lly + ny*track_gap));
   }
   // the original generate size on densety and ratio
   else {
@@ -4513,6 +4600,10 @@ int layout_runcmd (ActPass *_ap, const char *name)
   else if (strcmp (name, "config_refresh") == 0) {
     return _layoutcmd_configrefresh (ap, lp);
   }
+  else if (strcmp (name, "design_refresh") == 0) {
+    lp->resetForDesignRefresh ();
+    return 1;
+  }
   else {
     return -1;
   }
@@ -4671,5 +4762,3 @@ void ActStackLayout::reportDirs (FILE *fp)
   fprintf (fp, "    outinitdir: %s\n", _rect_outinitdir ? _rect_outinitdir : "none");
   fprintf (fp, "    outdir: %s\n", _rect_outdir ? _rect_outdir : "none");
 }
-
-

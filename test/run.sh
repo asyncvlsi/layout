@@ -132,6 +132,16 @@ then
 	echo
 fi
 
+if ! ./check_bbox_origin.sh "$ACTTOOL"
+then
+	fail=`expr $fail + 1`
+fi
+
+if [ ! -x ../layout_refresh_test.$EXT ] || \
+   !  ../layout_refresh_test.$EXT -cnf=m.conf 0.act cells.act
+then
+	fail=`expr $fail + 1`
+fi
 
 if [ $fail -ne 0 ]
 then
